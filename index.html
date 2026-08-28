@@ -3,16 +3,36 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Notepad Code Editor</title>
+  <title>Notepad Code Editor (With Preview & Themes)</title>
   
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.13/codemirror.min.css">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.13/theme/dracula.min.css">
   
   <style>
+    /* Default / Light Theme Variables */
     :root {
       --bg-color: #fdfdfd;
+      --text-color: #333;
       --border-color: #ccc;
       --tab-bg: #e0e0e0;
       --tab-active-bg: #fff;
+      --toolbar-bg: #f1f1f1;
+      --btn-bg: #fff;
+      --btn-hover: #e9e9e9;
+      --btn-text: #333;
+    }
+
+    /* Dark Theme Variables */
+    body.dark-mode {
+      --bg-color: #1e1e1e;
+      --text-color: #f8f8f2;
+      --border-color: #444;
+      --tab-bg: #2d2d2d;
+      --tab-active-bg: #1e1e1e;
+      --toolbar-bg: #282a36;
+      --btn-bg: #44475a;
+      --btn-hover: #6272a4;
+      --btn-text: #f8f8f2;
     }
     
     body {
@@ -22,27 +42,35 @@
       flex-direction: column;
       height: 100vh;
       background-color: var(--bg-color);
+      color: var(--text-color);
+      transition: background-color 0.2s, color 0.2s;
     }
 
     .toolbar {
       padding: 10px;
-      background-color: #f1f1f1;
+      background-color: var(--toolbar-bg);
       border-bottom: 1px solid var(--border-color);
       display: flex;
       gap: 10px;
+      align-items: center;
     }
 
-    button {
+    button, select {
       padding: 6px 12px;
       cursor: pointer;
-      border: 1px solid #aaa;
-      background: #fff;
+      border: 1px solid var(--border-color);
+      background: var(--btn-bg);
+      color: var(--btn-text);
       border-radius: 3px;
       font-size: 14px;
     }
 
-    button:hover {
-      background: #e9e9e9;
+    button:hover, select:hover {
+      background: var(--btn-hover);
+    }
+
+    .spacer {
+      flex-grow: 1;
     }
 
     .tabs {
@@ -82,17 +110,38 @@
 
     .close-tab:hover {
       color: red;
-      background: #eee;
+      background: var(--btn-hover);
+    }
+
+    .workspace {
+      flex: 1;
+      display: flex;
+      flex-direction: row; /* Horizontal split */
+      overflow: hidden;
     }
 
     .editor-container {
       flex: 1;
       display: flex;
       flex-direction: column;
-      overflow: hidden; /* Prevents container from breaking flexbox */
+      min-width: 0;
     }
 
-    /* Force CodeMirror to fill the remaining vertical space */
+    .preview-container {
+      flex: 1;
+      display: none; /* Hidden by default */
+      flex-direction: column;
+      border-left: 2px solid var(--border-color);
+      background: #fff; /* Always keep preview background white for HTML defaults */
+    }
+
+    iframe {
+      flex: 1;
+      border: none;
+      width: 100%;
+      height: 100%;
+    }
+
     .CodeMirror {
       height: 100%;
       font-family: 'Consolas', 'Courier New', monospace;
@@ -104,41 +153,90 @@
 
   <div class="toolbar">
     <button onclick="addNewTab()">+ New Tab</button>
-    <button onclick="downloadSingle()">Download Current Tab</button>
-    <button onclick="downloadProject()">Download Project (.zip)</button>
+    <button onclick="downloadSingle()">Download Current</button>
+    <button onclick="downloadProject()">Download Zip</button>
+    
+    <div class="spacer"></div> <button onclick="togglePreview()" id="previewBtn">Show Preview</button>
+    
+    <select id="themeSelector" onchange="changeTheme(this.value)">
+      <option value="system">System Theme</option>
+      <option value="light">Light Mode</option>
+      <option value="dark">Dark Mode</option>
+    </select>
   </div>
 
   <div class="tabs" id="tabContainer"></div>
 
-  <div class="editor-container">
-    <textarea id="editor"></textarea>
+  <div class="workspace">
+    <div class="editor-container">
+      <textarea id="editor"></textarea>
+    </div>
+    <div class="preview-container" id="previewContainer">
+      <iframe id="previewFrame" title="Code Preview"></iframe>
+    </div>
   </div>
 
   <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.13/codemirror.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.13/mode/xml/xml.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.13/mode/javascript/javascript.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.13/mode/css/css.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.13/mode/htmlmixed/htmlmixed.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 
   <script>
-    // 1. State Management (Load from LocalStorage or create default)
+    // --- 1. Theme Management ---
+    const themeSelector = document.getElementById('themeSelector');
+    let currentThemeSetting = localStorage.getItem('notepadTheme') || 'system';
+    themeSelector.value = currentThemeSetting;
+
+    // Listen for OS-level theme changes
+    window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => {
+      if (currentThemeSetting === 'system') applyTheme('system');
+    });
+
+    function changeTheme(themeValue) {
+      currentThemeSetting = themeValue;
+      localStorage.setItem('notepadTheme', themeValue);
+      applyTheme(themeValue);
+    }
+
+    function applyTheme(themeValue) {
+      const isSystemDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+      const isDark = themeValue === 'dark' || (themeValue === 'system' && isSystemDark);
+
+      if (isDark) {
+        document.body.classList.add('dark-mode');
+        if (typeof editor !== 'undefined') editor.setOption("theme", "dracula");
+      } else {
+        document.body.classList.remove('dark-mode');
+        if (typeof editor !== 'undefined') editor.setOption("theme", "default");
+      }
+    }
+
+    // --- 2. State & Editor Setup ---
     let tabs = JSON.parse(localStorage.getItem('notepadData')) || [
-      { id: 'tab_' + Date.now(), name: 'script.js', content: '// Write your code here...' }
+      { id: 'tab_' + Date.now(), name: 'index.html', content: '<h1>Hello World</h1>\n<p>Write HTML, CSS, or JS here and click Show Preview.</p>' }
     ];
     let activeTabId = tabs[0]?.id;
+    let isPreviewOpen = false;
 
-    // 2. Initialize CodeMirror
     const editorElement = document.getElementById('editor');
     const editor = CodeMirror.fromTextArea(editorElement, {
       lineNumbers: true,
-      mode: "text/plain", 
+      mode: "htmlmixed", // Gives nice colors for HTML
       theme: "default"
     });
 
-    // 3. Auto-Save Logic
-    // Fires every time you type. For a massive app, you'd want to "debounce" this.
+    // Apply the theme immediately so CodeMirror matches
+    applyTheme(currentThemeSetting); 
+
     editor.on('change', () => {
       const activeIndex = tabs.findIndex(t => t.id === activeTabId);
       if (activeIndex > -1) {
         tabs[activeIndex].content = editor.getValue();
         saveData();
+        // Live update if preview is open
+        if(isPreviewOpen) updatePreview();
       }
     });
 
@@ -146,7 +244,29 @@
       localStorage.setItem('notepadData', JSON.stringify(tabs));
     }
 
-    // 4. Tab Rendering & Management
+    // --- 3. Preview Logic ---
+    function togglePreview() {
+      const container = document.getElementById('previewContainer');
+      const btn = document.getElementById('previewBtn');
+      isPreviewOpen = !isPreviewOpen;
+      
+      if (isPreviewOpen) {
+        container.style.display = 'flex';
+        btn.textContent = 'Hide Preview';
+        updatePreview();
+      } else {
+        container.style.display = 'none';
+        btn.textContent = 'Show Preview';
+      }
+    }
+
+    function updatePreview() {
+      const frame = document.getElementById('previewFrame');
+      // srcdoc safely injects the editor code straight into the iframe
+      frame.srcdoc = editor.getValue(); 
+    }
+
+    // --- 4. Tab Rendering & Management ---
     function renderTabs() {
       const container = document.getElementById('tabContainer');
       container.innerHTML = '';
@@ -155,19 +275,17 @@
         const tabEl = document.createElement('div');
         tabEl.className = `tab ${tab.id === activeTabId ? 'active' : ''}`;
         
-        // Tab Name (Double-click to rename)
         const nameEl = document.createElement('span');
         nameEl.className = 'tab-name';
         nameEl.textContent = tab.name;
         nameEl.onclick = () => switchTab(tab.id);
         nameEl.ondblclick = () => renameTab(tab.id);
 
-        // Close Button
         const closeEl = document.createElement('span');
         closeEl.textContent = '×';
         closeEl.className = 'close-tab';
         closeEl.onclick = (e) => {
-          e.stopPropagation(); // Prevents clicking the tab underneath
+          e.stopPropagation();
           closeTab(tab.id);
         };
 
@@ -182,6 +300,7 @@
       const tab = tabs.find(t => t.id === id);
       if (tab) {
         editor.setValue(tab.content);
+        if (isPreviewOpen) updatePreview();
       }
       renderTabs();
     }
@@ -189,7 +308,7 @@
     function addNewTab() {
       const newTab = {
         id: 'tab_' + Date.now(),
-        name: `untitled_${tabs.length + 1}.txt`,
+        name: `untitled_${tabs.length + 1}.html`,
         content: ''
       };
       tabs.push(newTab);
@@ -202,12 +321,10 @@
         alert("You must have at least one tab open.");
         return;
       }
-      
       const index = tabs.findIndex(t => t.id === id);
       tabs.splice(index, 1);
       saveData();
       
-      // If we closed the active tab, jump to another one
       if (activeTabId === id) {
         const newActive = tabs[index - 1] || tabs[0];
         switchTab(newActive.id);
@@ -226,43 +343,33 @@
       }
     }
 
-    // 5. Download Logic
+    // --- 5. Download Logic ---
     function downloadSingle() {
       const tab = tabs.find(t => t.id === activeTabId);
       if (!tab) return;
-      
-      // Create a Blob from the text content and trigger an invisible download link
       const blob = new Blob([tab.content], { type: 'text/plain' });
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
       a.download = tab.name;
       a.click();
-      URL.revokeObjectURL(url); // Clean up memory
+      URL.revokeObjectURL(url);
     }
 
     async function downloadProject() {
       const zip = new JSZip();
-      
-      // Add each tab to the ZIP file
-      tabs.forEach(tab => {
-        zip.file(tab.name, tab.content);
-      });
-      
-      // Generate the ZIP and trigger download
+      tabs.forEach(tab => zip.file(tab.name, tab.content));
       const content = await zip.generateAsync({ type: "blob" });
       const url = URL.createObjectURL(content);
       const a = document.createElement('a');
       a.href = url;
       a.download = "my_project.zip";
       a.click();
-      URL.revokeObjectURL(url); // Clean up memory
+      URL.revokeObjectURL(url);
     }
 
-    // 6. Boot up the app
-    if (!activeTabId && tabs.length > 0) {
-        activeTabId = tabs[0].id;
-    }
+    // Boot up
+    if (!activeTabId && tabs.length > 0) activeTabId = tabs[0].id;
     switchTab(activeTabId);
 
   </script>
