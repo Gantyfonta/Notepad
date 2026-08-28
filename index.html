@@ -1,0 +1,270 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Notepad Code Editor</title>
+  
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.13/codemirror.min.css">
+  
+  <style>
+    :root {
+      --bg-color: #fdfdfd;
+      --border-color: #ccc;
+      --tab-bg: #e0e0e0;
+      --tab-active-bg: #fff;
+    }
+    
+    body {
+      margin: 0;
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      display: flex;
+      flex-direction: column;
+      height: 100vh;
+      background-color: var(--bg-color);
+    }
+
+    .toolbar {
+      padding: 10px;
+      background-color: #f1f1f1;
+      border-bottom: 1px solid var(--border-color);
+      display: flex;
+      gap: 10px;
+    }
+
+    button {
+      padding: 6px 12px;
+      cursor: pointer;
+      border: 1px solid #aaa;
+      background: #fff;
+      border-radius: 3px;
+      font-size: 14px;
+    }
+
+    button:hover {
+      background: #e9e9e9;
+    }
+
+    .tabs {
+      display: flex;
+      background: var(--tab-bg);
+      border-bottom: 1px solid var(--border-color);
+      overflow-x: auto;
+    }
+
+    .tab {
+      padding: 8px 15px;
+      cursor: pointer;
+      border-right: 1px solid var(--border-color);
+      user-select: none;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 14px;
+    }
+
+    .tab.active {
+      background: var(--tab-active-bg);
+      border-bottom: 1px solid var(--tab-active-bg);
+      margin-bottom: -1px;
+    }
+
+    .tab-name {
+      min-width: 60px;
+    }
+
+    .close-tab {
+      color: #888;
+      font-weight: bold;
+      border-radius: 50%;
+      padding: 0 5px;
+    }
+
+    .close-tab:hover {
+      color: red;
+      background: #eee;
+    }
+
+    .editor-container {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden; /* Prevents container from breaking flexbox */
+    }
+
+    /* Force CodeMirror to fill the remaining vertical space */
+    .CodeMirror {
+      height: 100%;
+      font-family: 'Consolas', 'Courier New', monospace;
+      font-size: 15px;
+    }
+  </style>
+</head>
+<body>
+
+  <div class="toolbar">
+    <button onclick="addNewTab()">+ New Tab</button>
+    <button onclick="downloadSingle()">Download Current Tab</button>
+    <button onclick="downloadProject()">Download Project (.zip)</button>
+  </div>
+
+  <div class="tabs" id="tabContainer"></div>
+
+  <div class="editor-container">
+    <textarea id="editor"></textarea>
+  </div>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.13/codemirror.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+
+  <script>
+    // 1. State Management (Load from LocalStorage or create default)
+    let tabs = JSON.parse(localStorage.getItem('notepadData')) || [
+      { id: 'tab_' + Date.now(), name: 'script.js', content: '// Write your code here...' }
+    ];
+    let activeTabId = tabs[0]?.id;
+
+    // 2. Initialize CodeMirror
+    const editorElement = document.getElementById('editor');
+    const editor = CodeMirror.fromTextArea(editorElement, {
+      lineNumbers: true,
+      mode: "text/plain", 
+      theme: "default"
+    });
+
+    // 3. Auto-Save Logic
+    // Fires every time you type. For a massive app, you'd want to "debounce" this.
+    editor.on('change', () => {
+      const activeIndex = tabs.findIndex(t => t.id === activeTabId);
+      if (activeIndex > -1) {
+        tabs[activeIndex].content = editor.getValue();
+        saveData();
+      }
+    });
+
+    function saveData() {
+      localStorage.setItem('notepadData', JSON.stringify(tabs));
+    }
+
+    // 4. Tab Rendering & Management
+    function renderTabs() {
+      const container = document.getElementById('tabContainer');
+      container.innerHTML = '';
+      
+      tabs.forEach(tab => {
+        const tabEl = document.createElement('div');
+        tabEl.className = `tab ${tab.id === activeTabId ? 'active' : ''}`;
+        
+        // Tab Name (Double-click to rename)
+        const nameEl = document.createElement('span');
+        nameEl.className = 'tab-name';
+        nameEl.textContent = tab.name;
+        nameEl.onclick = () => switchTab(tab.id);
+        nameEl.ondblclick = () => renameTab(tab.id);
+
+        // Close Button
+        const closeEl = document.createElement('span');
+        closeEl.textContent = '×';
+        closeEl.className = 'close-tab';
+        closeEl.onclick = (e) => {
+          e.stopPropagation(); // Prevents clicking the tab underneath
+          closeTab(tab.id);
+        };
+
+        tabEl.appendChild(nameEl);
+        tabEl.appendChild(closeEl);
+        container.appendChild(tabEl);
+      });
+    }
+
+    function switchTab(id) {
+      activeTabId = id;
+      const tab = tabs.find(t => t.id === id);
+      if (tab) {
+        editor.setValue(tab.content);
+      }
+      renderTabs();
+    }
+
+    function addNewTab() {
+      const newTab = {
+        id: 'tab_' + Date.now(),
+        name: `untitled_${tabs.length + 1}.txt`,
+        content: ''
+      };
+      tabs.push(newTab);
+      saveData();
+      switchTab(newTab.id);
+    }
+
+    function closeTab(id) {
+      if (tabs.length === 1) {
+        alert("You must have at least one tab open.");
+        return;
+      }
+      
+      const index = tabs.findIndex(t => t.id === id);
+      tabs.splice(index, 1);
+      saveData();
+      
+      // If we closed the active tab, jump to another one
+      if (activeTabId === id) {
+        const newActive = tabs[index - 1] || tabs[0];
+        switchTab(newActive.id);
+      } else {
+        renderTabs();
+      }
+    }
+
+    function renameTab(id) {
+      const tab = tabs.find(t => t.id === id);
+      const newName = prompt("Enter new file name (e.g., index.html):", tab.name);
+      if (newName && newName.trim() !== '') {
+        tab.name = newName.trim();
+        saveData();
+        renderTabs();
+      }
+    }
+
+    // 5. Download Logic
+    function downloadSingle() {
+      const tab = tabs.find(t => t.id === activeTabId);
+      if (!tab) return;
+      
+      // Create a Blob from the text content and trigger an invisible download link
+      const blob = new Blob([tab.content], { type: 'text/plain' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = tab.name;
+      a.click();
+      URL.revokeObjectURL(url); // Clean up memory
+    }
+
+    async function downloadProject() {
+      const zip = new JSZip();
+      
+      // Add each tab to the ZIP file
+      tabs.forEach(tab => {
+        zip.file(tab.name, tab.content);
+      });
+      
+      // Generate the ZIP and trigger download
+      const content = await zip.generateAsync({ type: "blob" });
+      const url = URL.createObjectURL(content);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = "my_project.zip";
+      a.click();
+      URL.revokeObjectURL(url); // Clean up memory
+    }
+
+    // 6. Boot up the app
+    if (!activeTabId && tabs.length > 0) {
+        activeTabId = tabs[0].id;
+    }
+    switchTab(activeTabId);
+
+  </script>
+</body>
+</html>
