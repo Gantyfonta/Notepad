@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Notepad Code Editor (With Uploads, Console & Linked Tabs)</title>
+  <title>Notepad Code Editor (With Uploads, Console, Linked Tabs & Resizable Panels)</title>
   
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.13/codemirror.min.css">
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.13/theme/dracula.min.css">
@@ -103,28 +103,53 @@
       display: flex;
       flex-direction: row;
       overflow: hidden;
+      position: relative;
     }
 
     .editor-container {
       flex: 1;
       display: flex;
       flex-direction: column;
-      min-width: 0;
+      min-width: 150px;
+    }
+
+    /* Vertical Splitter (between Editor and Preview) */
+    .splitter-v {
+      width: 5px;
+      background-color: var(--border-color);
+      cursor: col-resize;
+      transition: background-color 0.2s;
+    }
+
+    .splitter-v:hover, .splitter-v.dragging {
+      background-color: #007acc;
     }
 
     .preview-container {
-      flex: 1;
+      width: 50%;
       display: none;
       flex-direction: column;
-      border-left: 2px solid var(--border-color);
       background: #fff;
+      min-width: 150px;
     }
 
     iframe {
       flex: 1;
       border: none;
       width: 100%;
-      min-height: 50%;
+      min-height: 50px;
+    }
+
+    /* Horizontal Splitter (between Iframe and Console) */
+    .splitter-h {
+      height: 5px;
+      background-color: var(--border-color);
+      cursor: row-resize;
+      transition: background-color 0.2s;
+    }
+
+    .splitter-h:hover, .splitter-h.dragging {
+      background-color: #007acc;
     }
 
     /* Console Styles */
@@ -132,9 +157,9 @@
       height: 35%;
       display: flex;
       flex-direction: column;
-      border-top: 2px solid var(--border-color);
-      background-color: #1e1e1e; /* Always dark for developer feel */
+      background-color: #1e1e1e;
       color: #f8f8f2;
+      min-height: 40px;
     }
 
     .console-header {
@@ -203,14 +228,18 @@
   <div class="tabs" id="tabContainer"></div>
 
   <div class="workspace">
-    <div class="editor-container">
+    <div class="editor-container" id="editorContainer">
       <textarea id="editor"></textarea>
     </div>
     
+    <div class="splitter-v" id="splitterV"></div>
+
     <div class="preview-container" id="previewContainer">
       <iframe id="previewFrame" title="Code Preview"></iframe>
       
-      <div class="console-pane">
+      <div class="splitter-h" id="splitterH"></div>
+
+      <div class="console-pane" id="consolePane">
         <div class="console-header">
           <span>Console Output</span>
           <button onclick="clearConsole()">Clear</button>
@@ -230,6 +259,67 @@
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 
   <script>
+    // --- Resizable Panels Logic ---
+    const splitterV = document.getElementById('splitterV');
+    const editorContainer = document.getElementById('editorContainer');
+    const previewContainer = document.getElementById('previewContainer');
+    let isDraggingV = false;
+
+    splitterV.addEventListener('mousedown', (e) => {
+      isDraggingV = true;
+      splitterV.classList.add('dragging');
+      document.body.style.cursor = 'col-resize';
+      e.preventDefault();
+    });
+
+    const splitterH = document.getElementById('splitterH');
+    const previewFrame = document.getElementById('previewFrame');
+    const consolePane = document.getElementById('consolePane');
+    let isDraggingH = false;
+
+    splitterH.addEventListener('mousedown', (e) => {
+      isDraggingH = true;
+      splitterH.classList.add('dragging');
+      document.body.style.cursor = 'row-resize';
+      e.preventDefault();
+    });
+
+    window.addEventListener('mousemove', (e) => {
+      if (isDraggingV) {
+        const workspaceRect = document.querySelector('.workspace').getBoundingClientRect();
+        const newWidth = e.clientX - workspaceRect.left;
+        const totalWidth = workspaceRect.width;
+        
+        if (newWidth > 150 && newWidth < totalWidth - 150) {
+          editorContainer.style.flex = 'none';
+          editorContainer.style.width = newWidth + 'px';
+          previewContainer.style.flex = '1';
+        }
+      }
+
+      if (isDraggingH) {
+        const previewRect = previewContainer.getBoundingClientRect();
+        const newHeight = e.clientY - previewRect.top;
+        const totalHeight = previewRect.height;
+
+        if (newHeight > 50 && newHeight < totalHeight - 50) {
+          previewFrame.style.flex = 'none';
+          previewFrame.style.height = newHeight + 'px';
+          consolePane.style.flex = '1';
+        }
+      }
+    });
+
+    window.addEventListener('mouseup', () => {
+      if (isDraggingV || isDraggingH) {
+        isDraggingV = false;
+        isDraggingH = false;
+        splitterV.classList.remove('dragging');
+        splitterH.classList.remove('dragging');
+        document.body.style.cursor = 'default';
+      }
+    });
+
     // --- Console Logic (Main Window) ---
     window.addEventListener('message', (event) => {
       if (event.data && event.data.type === 'console') {
@@ -238,7 +328,7 @@
         logLine.className = 'log-line ' + (event.data.logType || 'log');
         logLine.textContent = event.data.message;
         consoleOutput.appendChild(logLine);
-        consoleOutput.scrollTop = consoleOutput.scrollHeight; // Auto-scroll to bottom
+        consoleOutput.scrollTop = consoleOutput.scrollHeight; 
       }
     });
 
@@ -317,12 +407,11 @@
           };
           tabs.push(newTab);
           saveData();
-          switchTab(newTab.id); // Bring the newly uploaded file into view
+          switchTab(newTab.id); 
         };
         reader.readAsText(file);
       });
       
-      // Clear the input so you can upload the same file again later if needed
       event.target.value = ''; 
     }
 
@@ -353,7 +442,6 @@
       }
     }
 
-    // We inject this script into HTML/JS files to catch console logs and errors
     const jsConsoleInterceptor = `
       <script>
         (function(){
@@ -370,14 +458,13 @@
     `;
 
     function updatePreview() {
-      clearConsole(); // Clear console when re-running
+      clearConsole(); 
       const frame = document.getElementById('previewFrame');
       const tab = tabs.find(t => t.id === activeTabId);
       
-      // CHANGED: Let variable so we can safely modify the code string below
       let code = editor.getValue(); 
 
-      // --- NEW BLOB LOGIC: Safely Link HTML, CSS, and JS Tabs together ---
+      // --- BLOB LOGIC: Link HTML, CSS, and JS Tabs together ---
       const blobUrls = {};
       tabs.forEach(t => {
         let mime = 'text/plain';
@@ -388,13 +475,12 @@
 
       tabs.forEach(t => {
         if (t.id !== activeTabId) {
-           // Safely escape the file name for the regex search so special characters don't break it
            const escapedName = t.name.replace(/[-[\]{}()*+?.,\\^$|#\s]/g, '\\$&');
            const regex = new RegExp(`(src|href)=["'](\\.\\/)?${escapedName}["']`, 'g');
            code = code.replace(regex, `$1="${blobUrls[t.name]}"`);
         }
       });
-      // -------------------------------------------------------------------
+      // --------------------------------------------------------
 
       if (tab.name.endsWith('.py')) {
         frame.srcdoc = `
@@ -410,7 +496,6 @@
 import sys
 from browser import window
 
-# Intercept print() and errors and send to our HTML console
 class ConsoleOutput:
     def __init__(self, log_type):
         self.log_type = log_type
@@ -443,7 +528,6 @@ ${code.replace(/</g, '\\x3c')}
           </body>
         `;
       } else {
-        // Inject our HTML/JS interceptor right before their code
         frame.srcdoc = jsConsoleInterceptor + code;
       }
     }
@@ -483,8 +567,6 @@ ${code.replace(/</g, '\\x3c')}
       if (tab) {
         updateEditorMode(tab.name);
         editor.setValue(tab.content);
-        // Note: For safety, we only auto-run the code when they manually click the "Show/Run" button, 
-        // to prevent infinite loops from running automatically when switching tabs.
         const frame = document.getElementById('previewFrame');
         if (isPreviewOpen) {
            frame.srcdoc = "<body style='font-family: sans-serif; padding: 10px;'><i>Click 'Hide Preview' then 'Show Preview / Run Code' to execute this tab.</i></body>";
