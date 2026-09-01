@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Notepad Code Editor (Interconnected Tabs)</title>
+  <title>Notepad Code Editor (With Uploads, Console & Linked Tabs)</title>
   
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.13/codemirror.min.css">
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.13/theme/dracula.min.css">
@@ -127,12 +127,13 @@
       min-height: 50%;
     }
 
+    /* Console Styles */
     .console-pane {
       height: 35%;
       display: flex;
       flex-direction: column;
       border-top: 2px solid var(--border-color);
-      background-color: #1e1e1e;
+      background-color: #1e1e1e; /* Always dark for developer feel */
       color: #f8f8f2;
     }
 
@@ -155,7 +156,9 @@
       color: #fff;
     }
 
-    .console-header button:hover { background: #6272a4; }
+    .console-header button:hover {
+      background: #6272a4;
+    }
 
     .console-output {
       flex: 1;
@@ -206,6 +209,7 @@
     
     <div class="preview-container" id="previewContainer">
       <iframe id="previewFrame" title="Code Preview"></iframe>
+      
       <div class="console-pane">
         <div class="console-header">
           <span>Console Output</span>
@@ -226,6 +230,7 @@
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 
   <script>
+    // --- Console Logic (Main Window) ---
     window.addEventListener('message', (event) => {
       if (event.data && event.data.type === 'console') {
         const consoleOutput = document.getElementById('consoleOutput');
@@ -233,12 +238,15 @@
         logLine.className = 'log-line ' + (event.data.logType || 'log');
         logLine.textContent = event.data.message;
         consoleOutput.appendChild(logLine);
-        consoleOutput.scrollTop = consoleOutput.scrollHeight; 
+        consoleOutput.scrollTop = consoleOutput.scrollHeight; // Auto-scroll to bottom
       }
     });
 
-    function clearConsole() { document.getElementById('consoleOutput').innerHTML = ''; }
+    function clearConsole() {
+      document.getElementById('consoleOutput').innerHTML = '';
+    }
 
+    // --- Theme Management ---
     const themeSelector = document.getElementById('themeSelector');
     let currentThemeSetting = localStorage.getItem('notepadTheme') || 'system';
     themeSelector.value = currentThemeSetting;
@@ -255,7 +263,9 @@
 
     function applyTheme(themeValue) {
       const isSystemDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
-      if (themeValue === 'dark' || (themeValue === 'system' && isSystemDark)) {
+      const isDark = themeValue === 'dark' || (themeValue === 'system' && isSystemDark);
+
+      if (isDark) {
         document.body.classList.add('dark-mode');
         if (typeof editor !== 'undefined') editor.setOption("theme", "dracula");
       } else {
@@ -264,17 +274,18 @@
       }
     }
 
+    // --- State & Editor Setup ---
     let tabs = JSON.parse(localStorage.getItem('notepadData')) || [
-      { id: 'tab_1', name: 'index.html', content: '\n<link rel="stylesheet" href="style.css">\n\n<h1>Hello World</h1>\n\n<script src="script.js"><\/script>' },
-      { id: 'tab_2', name: 'style.css', content: 'h1 { color: #ff5555; }' },
-      { id: 'tab_3', name: 'script.js', content: 'console.log("I am loaded from the JS tab!");' }
+      { id: 'tab_' + Date.now(), name: 'script.py', content: 'print("Hello World!")\n\n# Open the preview to see this in the console below!\nfor i in range(3):\n    print(f"Count: {i}")' }
     ];
     let activeTabId = tabs[0]?.id;
     let isPreviewOpen = false;
 
     const editorElement = document.getElementById('editor');
     const editor = CodeMirror.fromTextArea(editorElement, {
-      lineNumbers: true, mode: "htmlmixed", theme: "default"
+      lineNumbers: true,
+      mode: "python",
+      theme: "default"
     });
 
     applyTheme(currentThemeSetting); 
@@ -287,28 +298,46 @@
       }
     });
 
-    function saveData() { localStorage.setItem('notepadData', JSON.stringify(tabs)); }
+    function saveData() {
+      localStorage.setItem('notepadData', JSON.stringify(tabs));
+    }
 
+    // --- File Upload Logic ---
     function handleFileUpload(event) {
-      Array.from(event.target.files).forEach(file => {
+      const files = event.target.files;
+      if (files.length === 0) return;
+
+      Array.from(files).forEach(file => {
         const reader = new FileReader();
         reader.onload = (e) => {
-          const newTab = { id: 'tab_' + Date.now() + Math.random(), name: file.name, content: e.target.result };
+          const newTab = {
+            id: 'tab_' + Date.now() + Math.random(),
+            name: file.name,
+            content: e.target.result
+          };
           tabs.push(newTab);
           saveData();
-          switchTab(newTab.id); 
+          switchTab(newTab.id); // Bring the newly uploaded file into view
         };
         reader.readAsText(file);
       });
+      
+      // Clear the input so you can upload the same file again later if needed
       event.target.value = ''; 
     }
 
+    // --- Dynamic Mode Switching ---
     function updateEditorMode(filename) {
-      if (filename.endsWith('.py')) editor.setOption("mode", "python");
-      else if (filename.endsWith('.cs')) editor.setOption("mode", "text/x-csharp");
-      else editor.setOption("mode", "htmlmixed");
+      if (filename.endsWith('.py')) {
+        editor.setOption("mode", "python");
+      } else if (filename.endsWith('.cs')) {
+        editor.setOption("mode", "text/x-csharp");
+      } else {
+        editor.setOption("mode", "htmlmixed");
+      }
     }
 
+    // --- Preview & Execution Logic ---
     function togglePreview() {
       const container = document.getElementById('previewContainer');
       const btn = document.getElementById('previewBtn');
@@ -324,10 +353,14 @@
       }
     }
 
+    // We inject this script into HTML/JS files to catch console logs and errors
     const jsConsoleInterceptor = `
       <script>
         (function(){
-          window.onerror = function(msg, url, lineNo) { window.parent.postMessage({ type: 'console', logType: 'error', message: msg + ' (Line: ' + lineNo + ')' }, '*'); return false; };
+          window.onerror = function(msg, url, lineNo) {
+            window.parent.postMessage({ type: 'console', logType: 'error', message: msg + ' (Line: ' + lineNo + ')' }, '*');
+            return false;
+          };
           const log = console.log, err = console.error, warn = console.warn;
           console.log = function(...args) { window.parent.postMessage({ type: 'console', logType: 'log', message: args.join(' ') }, '*'); log.apply(console, args); };
           console.error = function(...args) { window.parent.postMessage({ type: 'console', logType: 'error', message: args.join(' ') }, '*'); err.apply(console, args); };
@@ -337,12 +370,14 @@
     `;
 
     function updatePreview() {
-      clearConsole(); 
+      clearConsole(); // Clear console when re-running
       const frame = document.getElementById('previewFrame');
       const tab = tabs.find(t => t.id === activeTabId);
-      let code = editor.getValue();
+      
+      // CHANGED: Let variable so we can safely modify the code string below
+      let code = editor.getValue(); 
 
-      // --- THE MAGIC: Link HTML, CSS, and JS Tabs together ---
+      // --- NEW BLOB LOGIC: Safely Link HTML, CSS, and JS Tabs together ---
       const blobUrls = {};
       tabs.forEach(t => {
         let mime = 'text/plain';
@@ -351,14 +386,15 @@
         blobUrls[t.name] = URL.createObjectURL(new Blob([t.content], { type: mime }));
       });
 
-      // Replace standard filenames with their virtual blob URLs
       tabs.forEach(t => {
         if (t.id !== activeTabId) {
-           const regex = new RegExp(\`(src|href)=["'](\\\\.\\\\/)?\${t.name}["']\`, 'g');
-           code = code.replace(regex, \`\$1="\${blobUrls[t.name]}"\`);
+           // Safely escape the file name for the regex search so special characters don't break it
+           const escapedName = t.name.replace(/[-[\]{}()*+?.,\\^$|#\s]/g, '\\$&');
+           const regex = new RegExp(`(src|href)=["'](\\.\\/)?${escapedName}["']`, 'g');
+           code = code.replace(regex, `$1="${blobUrls[t.name]}"`);
         }
       });
-      // -------------------------------------------------------
+      // -------------------------------------------------------------------
 
       if (tab.name.endsWith('.py')) {
         frame.srcdoc = `
@@ -373,6 +409,8 @@
             <script type="text/python">
 import sys
 from browser import window
+
+# Intercept print() and errors and send to our HTML console
 class ConsoleOutput:
     def __init__(self, log_type):
         self.log_type = log_type
@@ -388,23 +426,33 @@ class ConsoleOutput:
         if self.buffer:
             window.parent.postMessage({'type': 'console', 'logType': self.log_type, 'message': self.buffer}, '*')
             self.buffer = ""
+
 sys.stdout = ConsoleOutput("log")
 sys.stderr = ConsoleOutput("error")
+
 ${code.replace(/</g, '\\x3c')} 
             <\/script>
           </body>
           </html>
         `;
       } else if (tab.name.endsWith('.cs')) {
-        frame.srcdoc = `<body style="font-family: sans-serif; padding: 10px; background: #fff; color: #333;"><h3>⚠️ Execution Limit</h3><p>C# is a compiled language. You can write and save your C# code here, but you will need to download the file and run it using the .NET runtime on your computer.</p></body>`;
+        frame.srcdoc = `
+          <body style="font-family: sans-serif; padding: 10px; background: #fff; color: #333;">
+            <h3>⚠️ Execution Limit</h3>
+            <p>C# is a compiled language. You can write and save your C# code here, but you will need to download the file and run it using the .NET runtime on your computer.</p>
+          </body>
+        `;
       } else {
+        // Inject our HTML/JS interceptor right before their code
         frame.srcdoc = jsConsoleInterceptor + code;
       }
     }
 
+    // --- Tab Rendering & Management ---
     function renderTabs() {
       const container = document.getElementById('tabContainer');
       container.innerHTML = '';
+      
       tabs.forEach(tab => {
         const tabEl = document.createElement('div');
         tabEl.className = `tab ${tab.id === activeTabId ? 'active' : ''}`;
@@ -418,9 +466,14 @@ ${code.replace(/</g, '\\x3c')}
         const closeEl = document.createElement('span');
         closeEl.textContent = '×';
         closeEl.className = 'close-tab';
-        closeEl.onclick = (e) => { e.stopPropagation(); closeTab(tab.id); };
+        closeEl.onclick = (e) => {
+          e.stopPropagation();
+          closeTab(tab.id);
+        };
 
-        tabEl.appendChild(nameEl); tabEl.appendChild(closeEl); container.appendChild(tabEl);
+        tabEl.appendChild(nameEl);
+        tabEl.appendChild(closeEl);
+        container.appendChild(tabEl);
       });
     }
 
@@ -430,39 +483,66 @@ ${code.replace(/</g, '\\x3c')}
       if (tab) {
         updateEditorMode(tab.name);
         editor.setValue(tab.content);
+        // Note: For safety, we only auto-run the code when they manually click the "Show/Run" button, 
+        // to prevent infinite loops from running automatically when switching tabs.
         const frame = document.getElementById('previewFrame');
-        if (isPreviewOpen) frame.srcdoc = "<body style='font-family: sans-serif; padding: 10px;'><i>Click 'Hide Preview' then 'Show Preview / Run Code' to execute this tab.</i></body>";
+        if (isPreviewOpen) {
+           frame.srcdoc = "<body style='font-family: sans-serif; padding: 10px;'><i>Click 'Hide Preview' then 'Show Preview / Run Code' to execute this tab.</i></body>";
+        }
       }
       renderTabs();
     }
 
     function addNewTab() {
-      const newTab = { id: 'tab_' + Date.now(), name: `untitled_${tabs.length + 1}.html`, content: '' };
-      tabs.push(newTab); saveData(); switchTab(newTab.id);
+      const newTab = {
+        id: 'tab_' + Date.now(),
+        name: `untitled_${tabs.length + 1}.html`,
+        content: ''
+      };
+      tabs.push(newTab);
+      saveData();
+      switchTab(newTab.id);
     }
 
     function closeTab(id) {
-      if (tabs.length === 1) { alert("You must have at least one tab open."); return; }
+      if (tabs.length === 1) {
+        alert("You must have at least one tab open.");
+        return;
+      }
       const index = tabs.findIndex(t => t.id === id);
-      tabs.splice(index, 1); saveData();
-      if (activeTabId === id) switchTab((tabs[index - 1] || tabs[0]).id); else renderTabs();
+      tabs.splice(index, 1);
+      saveData();
+      
+      if (activeTabId === id) {
+        const newActive = tabs[index - 1] || tabs[0];
+        switchTab(newActive.id);
+      } else {
+        renderTabs();
+      }
     }
 
     function renameTab(id) {
       const tab = tabs.find(t => t.id === id);
-      const newName = prompt("Enter new file name (e.g., script.js or style.css):", tab.name);
+      const newName = prompt("Enter new file name (e.g., script.py, app.cs, or index.html):", tab.name);
       if (newName && newName.trim() !== '') {
-        tab.name = newName.trim(); saveData(); updateEditorMode(tab.name); renderTabs();
+        tab.name = newName.trim();
+        saveData();
+        updateEditorMode(tab.name);
+        renderTabs();
       }
     }
 
+    // --- Download Logic ---
     function downloadSingle() {
       const tab = tabs.find(t => t.id === activeTabId);
       if (!tab) return;
       const blob = new Blob([tab.content], { type: 'text/plain' });
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
-      a.href = url; a.download = tab.name; a.click(); URL.revokeObjectURL(url);
+      a.href = url;
+      a.download = tab.name;
+      a.click();
+      URL.revokeObjectURL(url);
     }
 
     async function downloadProject() {
@@ -471,9 +551,13 @@ ${code.replace(/</g, '\\x3c')}
       const content = await zip.generateAsync({ type: "blob" });
       const url = URL.createObjectURL(content);
       const a = document.createElement('a');
-      a.href = url; a.download = "my_project.zip"; a.click(); URL.revokeObjectURL(url);
+      a.href = url;
+      a.download = "my_project.zip";
+      a.click();
+      URL.revokeObjectURL(url);
     }
 
+    // Boot up
     if (!activeTabId && tabs.length > 0) activeTabId = tabs[0].id;
     const initialTab = tabs.find(t => t.id === activeTabId);
     if(initialTab) updateEditorMode(initialTab.name);
