@@ -3,13 +3,13 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Notepad Code Editor (With Preview & Themes)</title>
+  <title>Notepad Code Editor</title>
   
+  <!-- CodeMirror Base CSS & Theme -->
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.13/codemirror.min.css">
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.13/theme/dracula.min.css">
   
   <style>
-    /* Default / Light Theme Variables */
     :root {
       --bg-color: #fdfdfd;
       --text-color: #333;
@@ -22,7 +22,6 @@
       --btn-text: #333;
     }
 
-    /* Dark Theme Variables */
     body.dark-mode {
       --bg-color: #1e1e1e;
       --text-color: #f8f8f2;
@@ -65,13 +64,8 @@
       font-size: 14px;
     }
 
-    button:hover, select:hover {
-      background: var(--btn-hover);
-    }
-
-    .spacer {
-      flex-grow: 1;
-    }
+    button:hover, select:hover { background: var(--btn-hover); }
+    .spacer { flex-grow: 1; }
 
     .tabs {
       display: flex;
@@ -97,26 +91,18 @@
       margin-bottom: -1px;
     }
 
-    .tab-name {
-      min-width: 60px;
-    }
-
     .close-tab {
       color: #888;
       font-weight: bold;
       border-radius: 50%;
       padding: 0 5px;
     }
-
-    .close-tab:hover {
-      color: red;
-      background: var(--btn-hover);
-    }
+    .close-tab:hover { color: red; background: var(--btn-hover); }
 
     .workspace {
       flex: 1;
       display: flex;
-      flex-direction: row; /* Horizontal split */
+      flex-direction: row;
       overflow: hidden;
     }
 
@@ -129,10 +115,10 @@
 
     .preview-container {
       flex: 1;
-      display: none; /* Hidden by default */
+      display: none;
       flex-direction: column;
       border-left: 2px solid var(--border-color);
-      background: #fff; /* Always keep preview background white for HTML defaults */
+      background: #fff;
     }
 
     iframe {
@@ -156,7 +142,9 @@
     <button onclick="downloadSingle()">Download Current</button>
     <button onclick="downloadProject()">Download Zip</button>
     
-    <div class="spacer"></div> <button onclick="togglePreview()" id="previewBtn">Show Preview</button>
+    <div class="spacer"></div>
+    
+    <button onclick="togglePreview()" id="previewBtn">Show Preview / Run Code</button>
     
     <select id="themeSelector" onchange="changeTheme(this.value)">
       <option value="system">System Theme</option>
@@ -176,20 +164,23 @@
     </div>
   </div>
 
+  <!-- CodeMirror, Syntax Modes & JSZip -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.13/codemirror.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.13/mode/xml/xml.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.13/mode/javascript/javascript.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.13/mode/css/css.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.13/mode/htmlmixed/htmlmixed.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.13/mode/python/python.min.js"></script>
+  <!-- C-like languages for C# -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.13/mode/clike/clike.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 
   <script>
-    // --- 1. Theme Management ---
+    // --- Theme Management ---
     const themeSelector = document.getElementById('themeSelector');
     let currentThemeSetting = localStorage.getItem('notepadTheme') || 'system';
     themeSelector.value = currentThemeSetting;
 
-    // Listen for OS-level theme changes
     window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => {
       if (currentThemeSetting === 'system') applyTheme('system');
     });
@@ -213,9 +204,9 @@
       }
     }
 
-    // --- 2. State & Editor Setup ---
+    // --- State & Editor Setup ---
     let tabs = JSON.parse(localStorage.getItem('notepadData')) || [
-      { id: 'tab_' + Date.now(), name: 'index.html', content: '<h1>Hello World</h1>\n<p>Write HTML, CSS, or JS here and click Show Preview.</p>' }
+      { id: 'tab_' + Date.now(), name: 'index.html', content: '<h1>Hello World</h1>\n<p>Double click this tab to rename it to a .py or .cs file!</p>' }
     ];
     let activeTabId = tabs[0]?.id;
     let isPreviewOpen = false;
@@ -223,11 +214,10 @@
     const editorElement = document.getElementById('editor');
     const editor = CodeMirror.fromTextArea(editorElement, {
       lineNumbers: true,
-      mode: "htmlmixed", // Gives nice colors for HTML
+      mode: "htmlmixed",
       theme: "default"
     });
 
-    // Apply the theme immediately so CodeMirror matches
     applyTheme(currentThemeSetting); 
 
     editor.on('change', () => {
@@ -235,7 +225,6 @@
       if (activeIndex > -1) {
         tabs[activeIndex].content = editor.getValue();
         saveData();
-        // Live update if preview is open
         if(isPreviewOpen) updatePreview();
       }
     });
@@ -244,7 +233,18 @@
       localStorage.setItem('notepadData', JSON.stringify(tabs));
     }
 
-    // --- 3. Preview Logic ---
+    // --- Dynamic Mode Switching ---
+    function updateEditorMode(filename) {
+      if (filename.endsWith('.py')) {
+        editor.setOption("mode", "python");
+      } else if (filename.endsWith('.cs')) {
+        editor.setOption("mode", "text/x-csharp");
+      } else {
+        editor.setOption("mode", "htmlmixed");
+      }
+    }
+
+    // --- Preview & Execution Logic ---
     function togglePreview() {
       const container = document.getElementById('previewContainer');
       const btn = document.getElementById('previewBtn');
@@ -252,21 +252,58 @@
       
       if (isPreviewOpen) {
         container.style.display = 'flex';
-        btn.textContent = 'Hide Preview';
+        btn.textContent = 'Hide Preview / Run Code';
         updatePreview();
       } else {
         container.style.display = 'none';
-        btn.textContent = 'Show Preview';
+        btn.textContent = 'Show Preview / Run Code';
       }
     }
 
     function updatePreview() {
       const frame = document.getElementById('previewFrame');
-      // srcdoc safely injects the editor code straight into the iframe
-      frame.srcdoc = editor.getValue(); 
+      const tab = tabs.find(t => t.id === activeTabId);
+      const code = editor.getValue();
+
+      if (tab.name.endsWith('.py')) {
+        frame.srcdoc = `
+          <!DOCTYPE html>
+          <html>
+          <head>
+            <script src="https://cdnjs.cloudflare.com/ajax/libs/brython/3.11.3/brython.min.js"><\/script>
+            <script src="https://cdnjs.cloudflare.com/ajax/libs/brython/3.11.3/brython_stdlib.min.js"><\/script>
+          </head>
+          <body onload="brython()" style="font-family: monospace; padding: 10px; color: #000; background: #fff;">
+            <h3>Console Output:</h3>
+            <hr>
+            <script type="text/python">
+import sys
+from browser import document
+
+class DocumentOutput:
+    def write(self, text):
+        document.body.innerHTML += text.replace('\\n', '<br>')
+sys.stdout = DocumentOutput()
+sys.stderr = DocumentOutput()
+
+${code.replace(/</g, '\\x3c')} 
+            <\/script>
+          </body>
+          </html>
+        `;
+      } else if (tab.name.endsWith('.cs')) {
+        frame.srcdoc = `
+          <body style="font-family: monospace; padding: 10px; background: #fff; color: #333;">
+            <h3>⚠️ Execution Limit</h3>
+            <p>C# is a compiled language. You can write and save your C# code here, but you will need to download the file and run it using the .NET runtime on your computer.</p>
+          </body>
+        `;
+      } else {
+        frame.srcdoc = code;
+      }
     }
 
-    // --- 4. Tab Rendering & Management ---
+    // --- Tab Rendering & Management ---
     function renderTabs() {
       const container = document.getElementById('tabContainer');
       container.innerHTML = '';
@@ -299,6 +336,7 @@
       activeTabId = id;
       const tab = tabs.find(t => t.id === id);
       if (tab) {
+        updateEditorMode(tab.name);
         editor.setValue(tab.content);
         if (isPreviewOpen) updatePreview();
       }
@@ -335,15 +373,17 @@
 
     function renameTab(id) {
       const tab = tabs.find(t => t.id === id);
-      const newName = prompt("Enter new file name (e.g., index.html):", tab.name);
+      const newName = prompt("Enter new file name (e.g., script.py, app.cs, or index.html):", tab.name);
       if (newName && newName.trim() !== '') {
         tab.name = newName.trim();
         saveData();
+        updateEditorMode(tab.name);
+        if (isPreviewOpen) updatePreview();
         renderTabs();
       }
     }
 
-    // --- 5. Download Logic ---
+    // --- Download Logic ---
     function downloadSingle() {
       const tab = tabs.find(t => t.id === activeTabId);
       if (!tab) return;
@@ -370,6 +410,9 @@
 
     // Boot up
     if (!activeTabId && tabs.length > 0) activeTabId = tabs[0].id;
+    // Set the correct mode for the initial tab based on its name
+    const initialTab = tabs.find(t => t.id === activeTabId);
+    if(initialTab) updateEditorMode(initialTab.name);
     switchTab(activeTabId);
 
   </script>
