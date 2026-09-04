@@ -1,0 +1,679 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Notepad IDE (With Plugins & Images)</title>
+  
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.13/codemirror.min.css">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.13/theme/dracula.min.css">
+  
+  <style>
+    :root {
+      --bg-color: #fdfdfd;
+      --text-color: #333;
+      --border-color: #ccc;
+      --sidebar-bg: #f5f5f5;
+      --item-hover: #e9e9e9;
+      --item-active: #d0e8ff;
+      --toolbar-bg: #f1f1f1;
+      --dropdown-bg: #fff;
+      --dropdown-hover: #e9e9e9;
+      --editor-font: 'Consolas', monospace;
+      --modal-bg: rgba(0,0,0,0.5);
+      --modal-content: #fff;
+    }
+
+    body.dark-mode {
+      --bg-color: #1e1e1e;
+      --text-color: #f8f8f2;
+      --border-color: #444;
+      --sidebar-bg: #252526;
+      --item-hover: #2a2d2e;
+      --item-active: #37373d;
+      --toolbar-bg: #333333;
+      --dropdown-bg: #252526;
+      --dropdown-hover: #37373d;
+      --modal-content: #252526;
+    }
+    
+    body {
+      margin: 0; font-family: 'Segoe UI', sans-serif;
+      display: flex; flex-direction: column; height: 100vh;
+      background-color: var(--bg-color); color: var(--text-color);
+      overflow: hidden;
+    }
+
+    /* --- Menu Bar Styles --- */
+    .menu-bar { display: flex; background-color: var(--toolbar-bg); border-bottom: 1px solid var(--border-color); padding: 0 10px; }
+    .menu-item { position: relative; padding: 8px 12px; cursor: pointer; font-size: 14px; user-select: none; }
+    .menu-item:hover { background-color: var(--dropdown-hover); }
+    .dropdown { display: none; position: absolute; top: 100%; left: 0; background-color: var(--dropdown-bg); box-shadow: 0 4px 8px rgba(0,0,0,0.2); min-width: 200px; z-index: 100; border: 1px solid var(--border-color); }
+    .menu-item:hover .dropdown { display: block; }
+    .dropdown-item { padding: 8px 15px; display: block; cursor: pointer; }
+    .dropdown-item:hover { background-color: var(--dropdown-hover); }
+    .dropdown-divider { border-top: 1px solid var(--border-color); margin: 5px 0; }
+
+    /* --- Workspace & Sidebar --- */
+    .workspace { flex: 1; display: flex; overflow: hidden; position: relative; }
+    
+    .sidebar { width: 220px; display: flex; flex-direction: column; background: var(--sidebar-bg); min-width: 120px; }
+    .sidebar-header { padding: 8px 10px; font-size: 12px; font-weight: bold; text-transform: uppercase; border-bottom: 1px solid var(--border-color); display: flex; justify-content: space-between; align-items: center;}
+    .sidebar-header button { background: none; border: none; cursor: pointer; color: var(--text-color); font-weight: bold; padding: 2px 5px;}
+    .sidebar-header button:hover { background: var(--item-hover); border-radius: 3px; }
+    
+    .tree-container { flex: 1; overflow-y: auto; padding: 5px 0; font-size: 14px; }
+    .tree-item { display: flex; align-items: center; padding: 4px 10px; cursor: pointer; user-select: none; white-space: nowrap; }
+    .tree-item:hover { background: var(--item-hover); }
+    .tree-item.active { background: var(--item-active); }
+    .tree-icon { width: 20px; text-align: center; margin-right: 5px; font-size: 12px; }
+    .tree-children { padding-left: 15px; }
+
+    .editor-container { flex: 1; display: flex; flex-direction: column; min-width: 150px; position: relative; }
+    
+    /* Image Viewer */
+    .image-viewer { display: none; flex: 1; justify-content: center; align-items: center; background: #222; overflow: auto; padding: 20px; }
+    .image-viewer img { max-width: 100%; max-height: 100%; object-fit: contain; box-shadow: 0 4px 15px rgba(0,0,0,0.5); }
+
+    /* Splitters */
+    .splitter-v { width: 5px; background-color: var(--border-color); cursor: col-resize; z-index: 10; }
+    .splitter-v:hover, .splitter-v.dragging { background-color: #007acc; }
+    .splitter-h { height: 5px; background-color: var(--border-color); cursor: row-resize; }
+    .splitter-h:hover, .splitter-h.dragging { background-color: #007acc; }
+
+    .preview-container { width: 40%; display: none; flex-direction: column; background: #fff; min-width: 150px; }
+    .preview-header { background: var(--toolbar-bg); padding: 4px 10px; font-size: 12px; display: flex; justify-content: space-between; border-bottom: 1px solid var(--border-color); color: var(--text-color); }
+    .preview-header button { background: none; border: 1px solid var(--border-color); color: var(--text-color); cursor: pointer; border-radius: 3px;}
+    
+    iframe { flex: 1; border: none; width: 100%; min-height: 50px; background: #fff;}
+
+    .console-pane { height: 35%; display: flex; flex-direction: column; background-color: #1e1e1e; color: #f8f8f2; min-height: 40px; }
+    .console-header { background-color: #282a36; padding: 5px 10px; font-size: 13px; display: flex; justify-content: space-between; border-bottom: 1px solid #444; color: #fff; }
+    .console-header button { padding: 2px 8px; font-size: 12px; background: #44475a; border: none; color: #fff; cursor: pointer;}
+    .console-header button:hover { background: #6272a4; }
+    .console-output { flex: 1; overflow-y: auto; padding: 10px; font-family: monospace; font-size: 13px; }
+    .log-line { margin-bottom: 4px; border-bottom: 1px solid #333; padding-bottom: 4px; word-wrap: break-word;}
+    .log-line.error { color: #ff5555; }
+    .log-line.warn { color: #f1fa8c; }
+    .log-line.log { color: #f8f8f2; }
+
+    .CodeMirror { height: 100%; font-family: var(--editor-font); font-size: 15px; }
+
+    /* --- Modals --- */
+    .modal-overlay { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: var(--modal-bg); z-index: 1000; justify-content: center; align-items: center; }
+    .modal-content { background: var(--modal-content); padding: 20px; border-radius: 5px; width: 400px; max-width: 90%; border: 1px solid var(--border-color); box-shadow: 0 5px 15px rgba(0,0,0,0.5); }
+    .modal-header { font-size: 18px; font-weight: bold; margin-bottom: 15px; display: flex; justify-content: space-between; }
+    .modal-close { cursor: pointer; color: red; font-weight: bold; }
+    .plugin-list { max-height: 300px; overflow-y: auto; }
+    .plugin-item { display: flex; justify-content: space-between; align-items: center; padding: 10px; border: 1px solid var(--border-color); margin-bottom: 10px; border-radius: 4px; background: var(--toolbar-bg); }
+    .plugin-info strong { display: block; font-size: 14px; }
+    .plugin-info span { font-size: 12px; color: gray; }
+    .plugin-actions button { margin-left: 5px; cursor: pointer; padding: 4px 8px; font-size: 12px; }
+  </style>
+</head>
+<body>
+
+  <div class="menu-bar">
+    <div class="menu-item">File
+      <div class="dropdown">
+        <div class="dropdown-item" onclick="createNode('file')">New File</div>
+        <div class="dropdown-item" onclick="createNode('folder')">New Folder</div>
+        <div class="dropdown-divider"></div>
+        <div class="dropdown-item" onclick="document.getElementById('fileUpload').click()">Import (Upload Files)</div>
+        <div class="dropdown-divider"></div>
+        <div class="dropdown-item" onclick="downloadSingle()">Export (Download Current File)</div>
+        <div class="dropdown-item" onclick="downloadProject()">Export (Download Project Zip)</div>
+      </div>
+    </div>
+    <div class="menu-item">Window
+      <div class="dropdown">
+        <div class="dropdown-item" onclick="togglePreview()">Toggle Preview</div>
+        <div class="dropdown-item" onclick="toggleConsole()">Toggle Console</div>
+      </div>
+    </div>
+    <div class="menu-item">Plugins
+      <div class="dropdown">
+        <div class="dropdown-item" onclick="document.getElementById('pluginUpload').click()">Upload Plugin (.js)</div>
+        <div class="dropdown-item" onclick="openPluginManager()">Manage Plugins</div>
+      </div>
+    </div>
+    <div class="menu-item">General
+      <div class="dropdown">
+        <div class="dropdown-item">
+          Theme: 
+          <select id="themeSelector" onclick="event.stopPropagation()" onchange="changeTheme(this.value)">
+            <option value="system">System</option>
+            <option value="light">Light</option>
+            <option value="dark">Dark</option>
+          </select>
+        </div>
+        <div class="dropdown-item">
+          Font:
+          <select onclick="event.stopPropagation()" onchange="changeFont(this.value)">
+            <option value="'Consolas', monospace">Consolas</option>
+            <option value="'Courier New', Courier, monospace">Courier New</option>
+            <option value="'Fira Code', monospace">Fira Code</option>
+          </select>
+        </div>
+      </div>
+    </div>
+  </div>
+  
+  <input type="file" id="fileUpload" multiple style="display: none;" onchange="handleFileUpload(event)">
+  <input type="file" id="pluginUpload" accept=".js" style="display: none;" onchange="handlePluginUpload(event)">
+
+  <div class="modal-overlay" id="pluginModal">
+    <div class="modal-content">
+      <div class="modal-header">
+        <span>Manage Plugins</span>
+        <span class="modal-close" onclick="document.getElementById('pluginModal').style.display='none'">✕</span>
+      </div>
+      <div class="plugin-list" id="pluginList"></div>
+      <p style="font-size: 12px; color: gray; margin-top: 15px;"><i>Note: Plugins must be written in JavaScript. Refresh the page to apply newly enabled/disabled plugins.</i></p>
+    </div>
+  </div>
+
+  <div class="workspace">
+    
+    <div class="sidebar" id="sidebar">
+      <div class="sidebar-header">
+        Explorer
+        <div>
+          <button onclick="createNode('file')" title="New File">📄</button>
+          <button onclick="createNode('folder')" title="New Folder">📁</button>
+        </div>
+      </div>
+      <div class="tree-container" id="treeContainer"></div>
+    </div>
+    
+    <div class="splitter-v" id="splitterSidebar"></div>
+
+    <div class="editor-container" id="editorContainer">
+      <textarea id="editor"></textarea>
+      <div class="image-viewer" id="imageViewer">
+        <img id="imagePreview" src="" alt="Preview">
+      </div>
+    </div>
+    
+    <div class="splitter-v" id="splitterPreview"></div>
+
+    <div class="preview-container" id="previewContainer">
+      <div class="preview-header">
+        <span>Live Preview</span>
+        <button onclick="fullscreenPreview()">Full Screen ⛶</button>
+      </div>
+      <iframe id="previewFrame" title="Code Preview"></iframe>
+      
+      <div class="splitter-h" id="splitterH"></div>
+
+      <div class="console-pane" id="consolePane">
+        <div class="console-header">
+          <span>Console Output</span>
+          <button onclick="clearConsole()">Clear</button>
+        </div>
+        <div id="consoleOutput" class="console-output"></div>
+      </div>
+    </div>
+  </div>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.13/codemirror.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.13/mode/xml/xml.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.13/mode/javascript/javascript.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.13/mode/css/css.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.13/mode/htmlmixed/htmlmixed.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.13/mode/python/python.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.13/mode/clike/clike.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+
+  <script>
+    // --- IDE API FOR PLUGINS ---
+    // Plugins can use 'IDE' to interact with your code!
+    window.IDE = {
+        insertText: function(text) { editor.replaceSelection(text); },
+        getCode: function() { return editor.getValue(); },
+        log: function(msg) { console.log("[Plugin]", msg); },
+        alert: function(msg) { alert(msg); }
+    };
+
+    // --- Plugin Management System ---
+    let plugins = JSON.parse(localStorage.getItem('notepadPlugins')) || [
+        {
+            id: 'default_plugin',
+            name: 'Auto-Format Alert',
+            description: 'Example plugin that alerts you when loaded.',
+            code: 'IDE.log("Sample Plugin Loaded Successfully!");',
+            enabled: true
+        }
+    ];
+
+    function savePlugins() { localStorage.setItem('notepadPlugins', JSON.stringify(plugins)); }
+
+    function handlePluginUpload(event) {
+        const file = event.target.files[0];
+        if (!file) return;
+        const reader = new FileReader();
+        reader.onload = (e) => {
+            const newPlugin = {
+                id: 'plugin_' + Date.now(),
+                name: file.name.replace('.js', ''),
+                description: 'Uploaded plugin file.',
+                code: e.target.result,
+                enabled: true
+            };
+            plugins.push(newPlugin);
+            savePlugins();
+            alert(`Plugin '${newPlugin.name}' loaded! Please refresh the page to run it.`);
+        };
+        reader.readAsText(file);
+        event.target.value = '';
+    }
+
+    function openPluginManager() {
+        const modal = document.getElementById('pluginModal');
+        const list = document.getElementById('pluginList');
+        list.innerHTML = '';
+        
+        plugins.forEach(p => {
+            const item = document.createElement('div');
+            item.className = 'plugin-item';
+            
+            item.innerHTML = `
+                <div class="plugin-info">
+                    <strong>${p.name}</strong>
+                    <span>${p.description}</span>
+                </div>
+                <div class="plugin-actions">
+                    <button onclick="togglePlugin('${p.id}')">${p.enabled ? 'Disable' : 'Enable'}</button>
+                    <button style="color: red;" onclick="deletePlugin('${p.id}')">Delete</button>
+                </div>
+            `;
+            list.appendChild(item);
+        });
+        
+        modal.style.display = 'flex';
+    }
+
+    function togglePlugin(id) {
+        const p = plugins.find(x => x.id === id);
+        if(p) p.enabled = !p.enabled;
+        savePlugins(); openPluginManager(); // refresh ui
+    }
+
+    function deletePlugin(id) {
+        if(!confirm("Delete this plugin permanently?")) return;
+        plugins = plugins.filter(x => x.id !== id);
+        savePlugins(); openPluginManager(); // refresh ui
+    }
+
+    function runPlugins() {
+        plugins.forEach(p => {
+            if (p.enabled) {
+                try {
+                    // Executes the plugin code safely within the IDE's context
+                    const pluginFunc = new Function('IDE', p.code);
+                    pluginFunc(window.IDE);
+                } catch (err) {
+                    console.error(`Error in Plugin '${p.name}':`, err);
+                }
+            }
+        });
+    }
+
+    // --- Data Structure (The File Tree) ---
+    let nodes = JSON.parse(localStorage.getItem('notepadTree')) || [
+      { id: 'root_html', name: 'index.html', type: 'file', parentId: null, content: '<h1>Hello World</h1>\n<script src="script.py"><\/script>' }
+    ];
+    let activeFileId = nodes.find(n => n.type === 'file')?.id;
+    let selectedFolderId = null;
+
+    function saveData() { localStorage.setItem('notepadTree', JSON.stringify(nodes)); }
+
+    // --- Font & Theme Management ---
+    function changeFont(fontFam) { document.documentElement.style.setProperty('--editor-font', fontFam); }
+    const themeSelector = document.getElementById('themeSelector');
+    let currentThemeSetting = localStorage.getItem('notepadTheme') || 'system';
+    themeSelector.value = currentThemeSetting;
+
+    window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => {
+      if (currentThemeSetting === 'system') applyTheme('system');
+    });
+
+    function changeTheme(themeValue) {
+      currentThemeSetting = themeValue; localStorage.setItem('notepadTheme', themeValue); applyTheme(themeValue);
+    }
+
+    function applyTheme(themeValue) {
+      const isSystemDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+      if (themeValue === 'dark' || (themeValue === 'system' && isSystemDark)) {
+        document.body.classList.add('dark-mode'); if (typeof editor !== 'undefined') editor.setOption("theme", "dracula");
+      } else {
+        document.body.classList.remove('dark-mode'); if (typeof editor !== 'undefined') editor.setOption("theme", "default");
+      }
+    }
+
+    // --- Resizable Panels Logic ---
+    const setupSplitter = (splitterId, prevElId, nextElId, isVertical) => {
+      const splitter = document.getElementById(splitterId);
+      const prevEl = document.getElementById(prevElId);
+      const nextEl = document.getElementById(nextElId);
+      let isDragging = false;
+      splitter.addEventListener('mousedown', (e) => {
+        isDragging = true; splitter.classList.add('dragging'); document.body.style.cursor = isVertical ? 'col-resize' : 'row-resize'; e.preventDefault();
+      });
+      window.addEventListener('mousemove', (e) => {
+        if (!isDragging) return;
+        if (isVertical) {
+          const containerRect = prevEl.parentElement.getBoundingClientRect();
+          const newWidth = e.clientX - prevEl.getBoundingClientRect().left;
+          if (newWidth > 100 && (containerRect.right - e.clientX) > 100) { prevEl.style.flex = 'none'; prevEl.style.width = newWidth + 'px'; nextEl.style.flex = '1'; }
+        } else {
+          const containerRect = prevEl.parentElement.getBoundingClientRect();
+          const newHeight = e.clientY - prevEl.getBoundingClientRect().top;
+          if (newHeight > 50 && (containerRect.bottom - e.clientY) > 50) { prevEl.style.flex = 'none'; prevEl.style.height = newHeight + 'px'; nextEl.style.flex = '1'; }
+        }
+      });
+      window.addEventListener('mouseup', () => { isDragging = false; splitter.classList.remove('dragging'); document.body.style.cursor = 'default'; });
+    };
+
+    setupSplitter('splitterSidebar', 'sidebar', 'editorContainer', true);
+    setupSplitter('splitterPreview', 'editorContainer', 'previewContainer', true);
+    setupSplitter('splitterH', 'previewFrame', 'consolePane', false);
+
+
+    // --- Editor Setup ---
+    let isPreviewOpen = false;
+    let isConsoleOpen = true;
+
+    const editorElement = document.getElementById('editor');
+    const editor = CodeMirror.fromTextArea(editorElement, { lineNumbers: true, mode: "htmlmixed", theme: "default" });
+    applyTheme(currentThemeSetting); 
+
+    let reloadTimer;
+    editor.on('change', () => {
+      const fileNode = nodes.find(n => n.id === activeFileId);
+      if (fileNode && fileNode.type !== 'image') {
+        fileNode.content = editor.getValue();
+        saveData();
+        clearTimeout(reloadTimer);
+        reloadTimer = setTimeout(() => { if (isPreviewOpen) updatePreview(); }, 1000);
+      }
+    });
+
+    function updateEditorMode(filename) {
+      if (filename.endsWith('.py')) editor.setOption("mode", "python");
+      else if (filename.endsWith('.cs')) editor.setOption("mode", "text/x-csharp");
+      else editor.setOption("mode", "htmlmixed");
+    }
+
+    // --- File Tree UI Logic ---
+    function renderTree(parentId = null, containerEl = document.getElementById('treeContainer')) {
+      if(parentId === null) containerEl.innerHTML = ''; 
+
+      const children = nodes.filter(n => n.parentId === parentId);
+      children.sort((a, b) => (a.type === b.type) ? a.name.localeCompare(b.name) : (a.type === 'folder' ? -1 : 1));
+
+      children.forEach(node => {
+        const itemEl = document.createElement('div');
+        const row = document.createElement('div');
+        row.className = `tree-item ${node.id === activeFileId ? 'active' : ''} ${node.id === selectedFolderId ? 'active' : ''}`;
+        
+        const icon = document.createElement('span');
+        icon.className = 'tree-icon';
+        if (node.type === 'folder') icon.textContent = node.isOpen ? '📂' : '📁';
+        else if (node.type === 'image') icon.textContent = '🖼️';
+        else icon.textContent = '📄';
+        
+        const name = document.createElement('span');
+        name.textContent = node.name;
+
+        row.appendChild(icon); row.appendChild(name); itemEl.appendChild(row);
+        
+        row.ondblclick = (e) => {
+            e.stopPropagation();
+            const action = prompt(`Edit ${node.type} '${node.name}':\nType a new name, or type DELETE to remove it.`, node.name);
+            if(action === 'DELETE') deleteNode(node.id);
+            else if (action && action.trim() !== '') {
+                node.name = action.trim();
+                saveData(); renderTree();
+                if(node.id === activeFileId) updateEditorMode(node.name);
+            }
+        };
+
+        if (node.type === 'folder') {
+          row.onclick = (e) => { e.stopPropagation(); node.isOpen = !node.isOpen; selectedFolderId = node.id; saveData(); renderTree(); };
+          if (node.isOpen) {
+            const childrenContainer = document.createElement('div');
+            childrenContainer.className = 'tree-children';
+            renderTree(node.id, childrenContainer); 
+            itemEl.appendChild(childrenContainer);
+          }
+        } else {
+          row.onclick = (e) => { e.stopPropagation(); selectedFolderId = node.parentId; switchFile(node.id); };
+        }
+        
+        containerEl.appendChild(itemEl);
+      });
+    }
+
+    function switchFile(id) {
+      activeFileId = id;
+      const fileNode = nodes.find(n => n.id === id);
+      const codeMirrorWrapper = document.querySelector('.CodeMirror');
+      const imageViewer = document.getElementById('imageViewer');
+      const imagePreview = document.getElementById('imagePreview');
+
+      if (fileNode) {
+        if (fileNode.type === 'image') {
+            // Show Image Viewer, Hide Text Editor
+            codeMirrorWrapper.style.display = 'none';
+            imageViewer.style.display = 'flex';
+            imagePreview.src = fileNode.content; // It's saved as a base64 DataURL
+        } else {
+            // Show Text Editor, Hide Image Viewer
+            codeMirrorWrapper.style.display = 'block';
+            imageViewer.style.display = 'none';
+            updateEditorMode(fileNode.name);
+            editor.setValue(fileNode.content || '');
+        }
+        if (isPreviewOpen) updatePreview(); 
+      }
+      renderTree();
+    }
+
+    function createNode(type) {
+      const name = prompt(`Enter ${type} name:`, type === 'folder' ? 'New Folder' : 'untitled.html');
+      if (!name) return;
+      const newNode = { id: 'node_' + Date.now(), name: name.trim(), type: type, parentId: selectedFolderId, content: '', isOpen: true };
+      nodes.push(newNode); saveData();
+      if(type === 'file') switchFile(newNode.id); else renderTree();
+    }
+
+    function deleteNode(id) {
+        const children = nodes.filter(n => n.parentId === id);
+        children.forEach(c => deleteNode(c.id));
+        nodes = nodes.filter(n => n.id !== id);
+        if(activeFileId === id) {
+            const nextFile = nodes.find(n => n.type === 'file' || n.type === 'image');
+            if(nextFile) switchFile(nextFile.id);
+            else { editor.setValue(''); activeFileId = null; }
+        }
+        if(selectedFolderId === id) selectedFolderId = null;
+        saveData(); renderTree();
+    }
+
+    document.getElementById('sidebar').addEventListener('click', () => { selectedFolderId = null; renderTree(); });
+
+    // --- File & Image Upload Logic ---
+    function handleFileUpload(event) {
+      Array.from(event.target.files).forEach(file => {
+        const reader = new FileReader();
+        const isImage = file.type.startsWith('image/');
+        
+        reader.onload = (e) => {
+          const newNode = { 
+              id: 'node_' + Date.now() + Math.random(), 
+              name: file.name, 
+              type: isImage ? 'image' : 'file', 
+              parentId: selectedFolderId, 
+              content: e.target.result 
+          };
+          nodes.push(newNode); saveData(); switchFile(newNode.id); 
+        };
+
+        if (isImage) reader.readAsDataURL(file); // Saves as Base64 for images
+        else reader.readAsText(file);
+      });
+      event.target.value = ''; 
+    }
+
+    // --- UI Toggles & Console ---
+    function togglePreview() {
+      const container = document.getElementById('previewContainer');
+      isPreviewOpen = !isPreviewOpen;
+      container.style.display = isPreviewOpen ? 'flex' : 'none';
+      if (isPreviewOpen) updatePreview();
+    }
+
+    function toggleConsole() {
+      isConsoleOpen = !isConsoleOpen;
+      document.getElementById('consolePane').style.display = isConsoleOpen ? 'flex' : 'none';
+      document.getElementById('splitterH').style.display = isConsoleOpen ? 'block' : 'none';
+    }
+
+    function fullscreenPreview() {
+      const frame = document.getElementById('previewFrame');
+      if (frame.requestFullscreen) frame.requestFullscreen();
+      else if (frame.webkitRequestFullscreen) frame.webkitRequestFullscreen();
+    }
+
+    window.addEventListener('message', (event) => {
+      if (event.data && event.data.type === 'console') {
+        const consoleOutput = document.getElementById('consoleOutput');
+        const logLine = document.createElement('div');
+        logLine.className = 'log-line ' + (event.data.logType || 'log');
+        logLine.textContent = event.data.message;
+        consoleOutput.appendChild(logLine);
+        consoleOutput.scrollTop = consoleOutput.scrollHeight; 
+      }
+    });
+
+    function clearConsole() { document.getElementById('consoleOutput').innerHTML = ''; }
+
+    const jsConsoleInterceptor = `
+      <script>
+        (function(){
+          window.onerror = function(msg, url, lineNo) { window.parent.postMessage({ type: 'console', logType: 'error', message: msg + ' (Line: ' + lineNo + ')' }, '*'); return false; };
+          const log = console.log, err = console.error, warn = console.warn;
+          console.log = function(...args) { window.parent.postMessage({ type: 'console', logType: 'log', message: args.join(' ') }, '*'); log.apply(console, args); };
+          console.error = function(...args) { window.parent.postMessage({ type: 'console', logType: 'error', message: args.join(' ') }, '*'); err.apply(console, args); };
+          console.warn = function(...args) { window.parent.postMessage({ type: 'console', logType: 'warn', message: args.join(' ') }, '*'); warn.apply(console, args); };
+        })();
+      <\/script>
+    `;
+
+    function updatePreview() {
+      clearConsole(); 
+      const frame = document.getElementById('previewFrame');
+      const fileNode = nodes.find(n => n.id === activeFileId);
+      if(!fileNode || fileNode.type === 'image') return; // Don't try to execute images
+      
+      let code = editor.getValue(); 
+
+      // Support rendering images referenced inside HTML tabs!
+      const blobUrls = {};
+      nodes.filter(n => n.type === 'file' || n.type === 'image').forEach(t => {
+        if (t.type === 'image') {
+            blobUrls[t.name] = t.content; // Already a DataURL
+        } else {
+            let mime = 'text/plain';
+            if (t.name.endsWith('.css')) mime = 'text/css';
+            if (t.name.endsWith('.js')) mime = 'application/javascript';
+            blobUrls[t.name] = URL.createObjectURL(new Blob([t.content], { type: mime }));
+        }
+      });
+
+      nodes.filter(n => (n.type === 'file' || n.type === 'image') && n.id !== activeFileId).forEach(t => {
+           const escapedName = t.name.replace(/[-[\]{}()*+?.,\\^$|#\s]/g, '\\$&');
+           const regex = new RegExp(`(src|href)=["'](\\.\\/)?${escapedName}["']`, 'g');
+           code = code.replace(regex, `$1="${blobUrls[t.name]}"`);
+      });
+
+      if (fileNode.name.endsWith('.py')) {
+        frame.srcdoc = `<!DOCTYPE html> <html> <head> <script src="https://cdnjs.cloudflare.com/ajax/libs/brython/3.11.3/brython.min.js"><\/script> <script src="https://cdnjs.cloudflare.com/ajax/libs/brython/3.11.3/brython_stdlib.min.js"><\/script> </head> <body onload="brython()" style="font-family: sans-serif; padding: 10px; background: #fff; color: #333;"> <script type="text/python">
+import sys
+from browser import window
+class ConsoleOutput:
+    def __init__(self, log_type): self.log_type = log_type; self.buffer = ""
+    def write(self, text):
+        self.buffer += text
+        if "\\n" in self.buffer:
+            lines = self.buffer.split("\\n");
+            for line in lines[:-1]: window.parent.postMessage({'type': 'console', 'logType': self.log_type, 'message': line}, '*');
+            self.buffer = lines[-1]
+    def flush(self):
+        if self.buffer: window.parent.postMessage({'type': 'console', 'logType': self.log_type, 'message': self.buffer}, '*'); self.buffer = ""
+sys.stdout = ConsoleOutput("log"); sys.stderr = ConsoleOutput("error")
+${code.replace(/</g, '\\x3c')} 
+        <\/script> </body> </html>`;
+      } else if (fileNode.name.endsWith('.cs')) {
+        frame.srcdoc = `<body style="font-family: sans-serif; padding: 10px; background: #fff; color: #333;"><h3>⚠️ Execution Limit</h3><p>C# is a compiled language.</p></body>`;
+      } else {
+        frame.srcdoc = jsConsoleInterceptor + code;
+      }
+    }
+
+    // --- Export Logic ---
+    function downloadSingle() {
+      const fileNode = nodes.find(n => n.id === activeFileId); if (!fileNode) return;
+      // Convert DataURL back to Blob for images, regular text Blob for files
+      const blob = fileNode.type === 'image' ? dataURLtoBlob(fileNode.content) : new Blob([fileNode.content], { type: 'text/plain' });
+      const url = URL.createObjectURL(blob); const a = document.createElement('a');
+      a.href = url; a.download = fileNode.name; a.click(); URL.revokeObjectURL(url);
+    }
+
+    async function downloadProject() {
+      const zip = new JSZip();
+      function getPath(nodeId) {
+          let pathParts = []; let current = nodes.find(n => n.id === nodeId);
+          while(current && current.parentId !== null) {
+              let parent = nodes.find(n => n.id === current.parentId);
+              if(parent) pathParts.unshift(parent.name);
+              current = parent;
+          }
+          return pathParts.join('/');
+      }
+
+      nodes.forEach(node => {
+          if (node.type === 'file' || node.type === 'image') {
+              const dirPath = getPath(node.id);
+              const fileData = node.type === 'image' ? node.content.split(',')[1] : node.content; // Strip base64 prefix for JSZip
+              const opts = node.type === 'image' ? {base64: true} : {};
+              if (dirPath === '') zip.file(node.name, fileData, opts);
+              else zip.folder(dirPath).file(node.name, fileData, opts);
+          } else if (node.type === 'folder') {
+              const dirPath = getPath(node.id);
+              zip.folder(dirPath === '' ? node.name : dirPath + '/' + node.name);
+          }
+      });
+
+      const content = await zip.generateAsync({ type: "blob" });
+      const url = URL.createObjectURL(content); const a = document.createElement('a');
+      a.href = url; a.download = "my_project.zip"; a.click(); URL.revokeObjectURL(url);
+    }
+    
+    function dataURLtoBlob(dataurl) {
+        var arr = dataurl.split(','), mime = arr[0].match(/:(.*?);/)[1],
+            bstr = atob(arr[1]), n = bstr.length, u8arr = new Uint8Array(n);
+        while(n--){ u8arr[n] = bstr.charCodeAt(n); }
+        return new Blob([u8arr], {type:mime});
+    }
+
+    // Boot up
+    renderTree();
+    if(activeFileId) switchFile(activeFileId);
+    
+    // Boot Plugins
+    runPlugins();
+  </script>
+</body>
+</html>
